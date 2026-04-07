@@ -1,64 +1,72 @@
-# Decoding Musical Time — Methods, Ethics, and Limitations
+# Decoding Musical Time: Methods, Evaluation, and Reporting Notes
 
-This document supports the DS 4400 final project. **Numerical results** are produced by `run_experiment.py` and written to [`outputs/metrics.csv`](outputs/metrics.csv) and [`outputs/RESULTS_SUMMARY.md`](outputs/RESULTS_SUMMARY.md) after you run the pipeline.
+This document explains the final experiment design used by `run_experiment.py`. Report-ready numbers are written to `outputs/metrics.csv`, `outputs/baseline_metrics.csv`, and `outputs/RESULTS_SUMMARY.md`.
 
-## Data and ethics
+## Main story
 
-- **Primary data:** UCI **YearPredictionMSD**: 90 numeric timbre-related features and release year. See [`DATA.md`](DATA.md) for URLs, schema, and split policy.
-- **Why not Spotify as core training data:** Platform terms create uncertainty for redistributing or training on API-sourced content; a public benchmark avoids that compliance risk while staying aligned with the research question (year from audio descriptors).
+- Primary task: regression on release year.
+- Secondary task: decade classification for interpretation and rubric support.
+- Primary benchmark to report: random split results.
+- Stronger leakage check to report: blocked holdout results.
+- Stress test to report carefully: future extrapolation results. Treat this as a hard generalization check, not the main headline table.
 
-## Task and preprocessing
+## Regression models
 
-- **Task:** Regression — predict **release year** from the feature vector.
-- **Cleaning:** Drop rows with missing labels or features; drop duplicate feature rows; optional `--sample-fraction` for quick runs.
-- **Scaling:** `StandardScaler` fit **only** on the training portion appropriate to each experiment (random: train+val before test; time-aware: all years ≤ 2000 before predicting years > 2000).
+The project compares four regression models:
 
-## Splits and leakage
+| Model | Purpose |
+| --- | --- |
+| `linear_regression` | Simple baseline on scaled features |
+| `ridge_regression` | Regularized linear model with alpha selected on validation data |
+| `random_forest` | Nonlinear ensemble with feature importance estimates |
+| `hist_gradient_boosting` | Strong tree boosting baseline for tabular data |
 
-1. **Random split:** ~70% / ~15% / ~15% train / validation / test (`random_state=42`). Tree hyperparameters are tuned on a subsample of the training split; **Ridge** uses internal 5-fold CV on train+val. Final models are fit on train+val combined; metrics are on the held-out test set.
-2. **Time-aware split:** Train on **year ≤ 2000**, test on **year > 2000**. Inner tuning uses **year ≤ 1995** vs **1996–2000** so hyperparameter choices are not fit on the final test era. This reduces **temporal leakage** compared to a purely random split: random mixing makes “nearby years” easier to interpolate.
+The old sklearn `GradientBoostingRegressor` path has been removed because it did not materially improve the story or the runtime.
 
-Comparing the two splits shows how much measured performance is an artifact of evaluation design versus generalization to **later** music.
+## Evaluation design
 
-## Models
+### Random split
 
-| Model | Role |
-|--------|------|
-| **Linear regression** | OLS baseline; interpretable coefficients on scaled features. |
-| **RidgeCV** | L2 regularization for correlated timbre features; α chosen by CV. |
-| **Random forest** | Nonlinearities and interactions; feature importances for interpretation. |
-| **HistGradientBoostingRegressor** | Strong tabular regressor (histogram GBDT); tuned hyperparameters. |
-| **GradientBoostingRegressor** | Classic gradient boosting (sklearn); tuned on a subsample for runtime. |
+- About 70% train, 15% validation, 15% test.
+- Hyperparameters are selected using the explicit validation split.
+- Final models are fit on train plus validation and scored on the held-out test set.
 
-## Evaluation metrics
+### Blocked holdout
 
-- **MSE, RMSE, MAE, R²** on held-out data. **MAE / RMSE in years** are the most interpretable headlines.
-- **Post-hoc decade analysis:** True and predicted years are binned to decades; we report **decade accuracy** and save confusion-style tables for **HGBR** predictions (descriptive only, not a trained classifier).
+- Validation window: 1971-1980
+- Test window: 1981-1995
+- Final training pool: all years except the test window
 
-## Artifacts (after running the code)
+This split is useful because it removes the exact test years from training without forcing the model to extrapolate only beyond the maximum observed train year.
 
-- `outputs/metrics.csv` — all models × both splits.
-- `outputs/figures/residuals_*.png` — residuals for Ridge and HGBR.
-- `outputs/feature_importance_rf_*.csv`, `outputs/ridge_coef_*.csv` — interpretability.
-- `outputs/decade_confusion_*_hgbr.csv` — post-hoc decade confusion tables.
+### Future extrapolation stress test
 
-## Limitations
+- Training pool: years up to 2000
+- Tuning split: years up to 1995 versus 1996-2000
+- Test pool: years after 2000
 
-- **Overlap between adjacent eras** in feature space makes perfect separation unrealistic; errors should be interpreted in that light.
-- **MSD features** are summaries, not raw audio; conclusions are about **this feature set**, not all possible descriptors.
-- **Time-aware split** is one plausible policy; different cutoffs or rolling windows would yield different numbers.
-- **Hyperparameter search** uses subsamples for tree models to keep runtime manageable; full-grid search on the entire training set could change results slightly.
+This is intentionally difficult. It should be discussed as a stress test because it asks the model to predict later music from earlier music only.
 
-## How to run
+## Baselines
 
-```bash
-cd Final_Project
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python run_experiment.py
-# Quick test:
-python run_experiment.py --sample-fraction 0.05
-```
+Every regression split is compared against naive baselines:
 
-First run downloads the UCI zip into `data_cache/` (or pass `--data-home` to override the cache directory).
+- training-mean predictor
+- training-median predictor
+- last-seen-year predictor for the future extrapolation split
+
+A learned model should beat these baselines before the result is presented as meaningful.
+
+## Classification notes
+
+- Decade classification is run only on splits where every test decade label appears in training.
+- Use confusion matrices and ROC curves from those supported splits in the final report.
+- Do not use the future extrapolation classification result as a headline comparison if the test set contains unseen decade labels.
+
+## Recommended reporting
+
+- Put the random split regression table first.
+- Put the blocked holdout regression table second.
+- Use the future extrapolation table as a limitations or robustness subsection.
+- Include baseline metrics alongside the learned models.
+- Use feature importance, ridge coefficients, residual plots, and decade confusion patterns to interpret what the models are learning.
