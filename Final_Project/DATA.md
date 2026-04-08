@@ -2,26 +2,38 @@
 
 ## Source
 
-- **Dataset:** Year Prediction Million Song Dataset (MSD-derived tabular timbre features).
-- **Download:** UCI archive [YearPredictionMSD](https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD); code caches `YearPredictionMSD.txt` under `data_cache/` (see [`src/data.py`](src/data.py) for the zip URL).
+- Dataset: Year Prediction Million Song Dataset (MSD-derived tabular timbre features).
+- Download: UCI archive [YearPredictionMSD](https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD). The code caches `YearPredictionMSD.txt` under `data_cache/`.
 
 ## License and use
 
-Research-friendly public benchmark; suitable for ML coursework. This project does **not** use Spotify API data as the primary training source (policy uncertainty); MSD/UCI-style data is used instead.
+This is a research-friendly public benchmark and is appropriate for coursework. The project does not use Spotify API data as the main training source.
 
 ## Schema
 
-- **Samples:** ~515,345 tracks in the official file (row count may drop slightly after duplicate removal).
-- **Target:** Release year, typically **1922–2011** per UCI documentation (confirm in `outputs/data_meta.json` after a run).
-- **Features:** **90** numeric attributes (`f00`–`f89` in code): timbre averages and covariances as distributed by UCI.
-
-## Train / holdout policy (code)
-
-1. **Random split:** 70% train, 15% validation, 15% test (`random_state=42`). Used for hyperparameter tuning, then scaler + models refit on train+validation, metrics on held-out test.
-2. **Time-aware split:** **Train** if `year <= 2000`, **test** if `year > 2000`. Tuning uses an inner temporal slice: fit scaler and models on `year <= 1995`, validate on `1996 <= year <= 2000`; final models use scaler fit on **all** `year <= 2000` and evaluation on `year > 2000`.
+- Samples: about 515,345 tracks in the official file before cleaning.
+- Target: release year, typically 1922-2011.
+- Features: 90 numeric attributes (`f00`-`f89`) distributed with the UCI benchmark.
 
 ## Preprocessing
 
-- Drop rows with missing target or features.
-- Optional subsampling for quick runs: `--sample-fraction` (see `run_experiment.py`).
-- **StandardScaler** (z-score): always **fit on training data only** for each split regime, then applied to validation/test.
+- Drop rows with missing target or missing features.
+- Deduplicate exact duplicate rows only. The pipeline does not drop rows just because the feature vector repeats with a different target year.
+- Optional subsampling for quick runs via `--sample-fraction`.
+- Standardize features with `StandardScaler` for linear models only, fitting the scaler on the appropriate training partition for each split.
+
+## Split policy used in code
+
+1. Random split
+   Train / validation / test is approximately 70% / 15% / 15% with `random_state=42`.
+2. Blocked holdout
+   Validation years are 1971-1980, test years are 1981-1995, and the final training pool uses every year outside the test window.
+3. Future extrapolation stress test
+   Train on `year <= 2000`, test on `year > 2000`, and tune on `year <= 1995` versus `1996-2000`.
+
+## Output artifacts
+
+- `outputs/data_meta.json`: overall dataset size and sampled run metadata.
+- `outputs/split_metadata.json`: split sizes and year ranges.
+- `outputs/baseline_metrics.csv`: naive benchmark metrics for each split.
+- `outputs/classification_support.csv`: whether each split has full decade-label support for classification.

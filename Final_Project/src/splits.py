@@ -1,4 +1,4 @@
-"""Random and time-aware train/validation/test splits."""
+"""Random and year-blocked train/validation/test splits."""
 
 from __future__ import annotations
 
@@ -49,15 +49,44 @@ def random_train_val_test(
     )
 
 
-def time_aware_masks(
+def blocked_holdout_masks(
+    y: np.ndarray,
+    val_year_min: int = 1971,
+    val_year_max: int = 1980,
+    test_year_min: int = 1981,
+    test_year_max: int = 1995,
+) -> dict[str, np.ndarray]:
+    """
+    Hold out a contiguous test window while training on the remaining years.
+
+    Final training pool excludes the test window only.
+    Hyperparameter tuning excludes both the validation and test windows.
+    """
+    y = np.asarray(y).ravel()
+    tune_val = (y >= val_year_min) & (y <= val_year_max)
+    test_pool = (y >= test_year_min) & (y <= test_year_max)
+    if np.any(tune_val & test_pool):
+        raise ValueError("Validation and test windows must not overlap.")
+
+    train_pool = ~test_pool
+    tune_train = ~(tune_val | test_pool)
+    return {
+        "train_pool": train_pool,
+        "test_pool": test_pool,
+        "tune_train": tune_train,
+        "tune_val": tune_val,
+    }
+
+
+def future_extrapolation_masks(
     y: np.ndarray,
     train_year_max: int = 2000,
     tune_train_year_max: int = 1995,
 ) -> dict[str, np.ndarray]:
     """
-    Temporal split: train pool year <= train_year_max, test year > train_year_max.
+    Future holdout: train pool year <= train_year_max, test year > train_year_max.
     Inner tuning: train_tune year <= tune_train_year_max,
-                  val_tune tune_train_year_max < year <= train_year_max.
+    val_tune tune_train_year_max < year <= train_year_max.
     """
     y = np.asarray(y).ravel()
     train_pool = y <= train_year_max
