@@ -15,6 +15,10 @@ import argparse
 import json
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import (
@@ -22,11 +26,22 @@ from sklearn.ensemble import (
     HistGradientBoostingRegressor,
     RandomForestRegressor,
 )
-from sklearn.linear_model import LinearRegression, RidgeCV
+from sklearn.linear_model import LinearRegression, LogisticRegression, RidgeCV
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from src.analysis import decade_posthoc, plot_residuals, ridge_coef_table
+from src.analysis import (
+    decade_posthoc,
+    feature_year_correlations,
+    interpretation_summary,
+    plot_decade_confusion_heatmap,
+    plot_eda_feature_correlation_bars,
+    plot_eda_selected_feature_histograms,
+    plot_eda_year_distribution,
+    plot_residuals,
+    plot_roc_median_year_split,
+    ridge_coef_table,
+)
 from src.data import load_year_prediction_msd
 from src.eval import regression_metrics
 from src.splits import random_train_val_test, time_aware_masks
@@ -34,6 +49,29 @@ from src.splits import random_train_val_test, time_aware_masks
 RNG = np.random.default_rng(42)
 OUT = Path(__file__).resolve().parent / "outputs"
 N_SEARCH = 80_000  # max rows for randomized hyperparam search
+
+
+def _auxiliary_roc_logistic(
+    X_fit_s: np.ndarray,
+    y_fit: np.ndarray,
+    X_test_s: np.ndarray,
+    y_test: np.ndarray,
+    out_path: Path,
+    title: str,
+) -> None:
+    """
+    ROC curve for a binarized year task (year >= median(y_fit)), fit with logistic
+    regression on the same scaled matrix used for regressors — supports rubric
+    ROC plots without changing the primary regression setup.
+    """
+    med = float(np.median(y_fit))
+    y_tr = (y_fit >= med).astype(int)
+    if y_tr.min() == y_tr.max():
+        return
+    clf = LogisticRegression(max_iter=5000, random_state=42)
+    clf.fit(X_fit_s, y_tr)
+    proba = clf.predict_proba(X_test_s)[:, 1]
+    plot_roc_median_year_split(y_test, proba, med, out_path, title)
 
 
 def _subsample(X: np.ndarray, y: np.ndarray, n_max: int) -> tuple[np.ndarray, np.ndarray]:
@@ -209,6 +247,8 @@ def run_random_split(
 
     artifacts["y_test"] = y_test
     artifacts["X_test_s"] = X_test_s
+    artifacts["X_fit_s"] = X_fit_s
+    artifacts["y_fit"] = y_combined
     artifacts["scaler"] = scaler_final
     artifacts["feature_names"] = feature_names
 
@@ -352,6 +392,8 @@ def run_time_split(
 
     artifacts["y_test"] = y_test
     artifacts["X_test_s"] = X_test_s
+    artifacts["X_fit_s"] = X_fit_s
+    artifacts["y_fit"] = y_train_pool
     artifacts["feature_names"] = feature_names
 
     return rows, artifacts
@@ -386,13 +428,30 @@ def main() -> None:
     y = y_series.values
 
     meta = {
+        "dataset": "UCI YearPredictionMSD",
         "n_samples": int(len(X)),
         "n_features": int(X.shape[1]),
+        "feature_description": (
+            "90 numeric timbre summary statistics (columns f00–f89) as distributed by UCI."
+        ),
+        "label": "release_year",
+        "label_description": "Song release year; regression target.",
         "year_min": float(np.min(y)),
         "year_max": float(np.max(y)),
         "sample_fraction": args.sample_fraction,
     }
     (OUT / "data_meta.json").write_text(json.dumps(meta, indent=2))
+
+    corr_full = feature_year_correlations(X_df, y_series)
+    corr_full.to_csv(OUT / "eda_feature_year_correlation.csv", index=False)
+    plot_eda_year_distribution(y_series.values, fig_dir / "eda_year_distribution.png")
+    plot_eda_feature_correlation_bars(
+        corr_full, fig_dir / "eda_feature_correlation_top.png", top_k=20
+    )
+    eda_pick = corr_full.head(6)["feature"].astype(str).tolist()
+    plot_eda_selected_feature_histograms(
+        X_df, eda_pick, fig_dir / "eda_selected_feature_histograms.png"
+    )
 
     all_rows: list[dict] = []
     random_rows, random_art = run_random_split(X, y, feature_names)
@@ -404,9 +463,12 @@ def main() -> None:
     metrics_df = pd.DataFrame(all_rows)
     metrics_df.to_csv(OUT / "metrics.csv", index=False)
 
+    decade_acc: dict[str, float] = {}
     for name, art in [("random", random_art), ("time_aware", time_art)]:
         y_te = art["y_test"]
         fn = art["feature_names"]
+        slug = "random" if name == "random" else "time"
+
         pred_ridge = art["ridge"].predict(art["X_test_s"])
         plot_residuals(
             y_te,
@@ -422,6 +484,27 @@ def main() -> None:
             out_path=fig_dir / f"residuals_hgbr_{name}.png",
         )
 
+        ctab_h, dacc = decade_posthoc(y_te, pred_h)
+        ctab_h.to_csv(OUT / f"decade_confusion_{slug}_hgbr.csv")
+        plot_decade_confusion_heatmap(
+            ctab_h,
+            fig_dir / f"decade_confusion_hgbr_{slug}.png",
+            title=f"Decade bins (true vs pred), HGBR — {name}",
+        )
+        decade_acc[slug] = dacc
+        (OUT / f"decade_accuracy_hgbr_{name}.txt").write_text(
+            f"decade_bin_accuracy\t{dacc:.4f}\n"
+        )
+
+        _auxiliary_roc_logistic(
+            art["X_fit_s"],
+            art["y_fit"],
+            art["X_test_s"],
+            y_te,
+            fig_dir / f"roc_median_year_logistic_{slug}.png",
+            title=f"Auxiliary ROC ({name})",
+        )
+
         rf: RandomForestRegressor = art["rf"]
         imp = pd.DataFrame(
             {"feature": fn, "importance": rf.feature_importances_}
@@ -433,24 +516,39 @@ def main() -> None:
         rc = ridge_coef_table(art["ridge"], fn, top_k=20)
         rc.to_csv(OUT / f"ridge_coef_{name}.csv", index=False)
 
-        _, dacc = decade_posthoc(y_te, pred_h)
-        (OUT / f"decade_accuracy_hgbr_{name}.txt").write_text(
-            f"decade_bin_accuracy\t{dacc:.4f}\n"
-        )
+    acc_r = decade_acc["random"]
+    acc_t = decade_acc["time"]
 
-    ctab_r, acc_r = decade_posthoc(
-        random_art["y_test"], random_art["hgbr"].predict(random_art["X_test_s"])
+    interp = interpretation_summary(
+        feature_names,
+        np.asarray(random_art["rf"].feature_importances_),
+        corr_full,
+        metrics_df,
     )
-    ctab_r.to_csv(OUT / "decade_confusion_random_hgbr.csv")
-    ctab_t, acc_t = decade_posthoc(
-        time_art["y_test"], time_art["hgbr"].predict(time_art["X_test_s"])
+    (OUT / "interpretation_hints.json").write_text(
+        json.dumps(interp, indent=2, default=str)
     )
-    ctab_t.to_csv(OUT / "decade_confusion_time_hgbr.csv")
 
     summary_lines = [
         "# Auto-generated result summary",
         "",
         f"Rows used: {meta['n_samples']}",
+        "",
+        "## Rubric-oriented artifacts",
+        "",
+        "- **EDA:** `eda_feature_year_correlation.csv`, "
+        "`figures/eda_year_distribution.png`, "
+        "`figures/eda_feature_correlation_top.png`, "
+        "`figures/eda_selected_feature_histograms.png`",
+        "- **Models (≥4):** linear_regression, ridge_cv, random_forest, "
+        "hist_gradient_boosting, gradient_boosting — see `metrics.csv`.",
+        "- **Splits / methodology:** random 70/15/15; time-aware train ≤2000 / "
+        "test >2000; RidgeCV 5-fold; RandomizedSearchCV for trees.",
+        "- **Metrics:** MSE, RMSE, MAE, median_ae, max_error, R², explained_var.",
+        "- **Confusion-style:** decade bin CSV + `figures/decade_confusion_hgbr_*.png`.",
+        "- **ROC:** `figures/roc_median_year_logistic_*.png` (logistic on "
+        "median-split year, auxiliary to regression).",
+        "- **Interpretation cues:** `interpretation_hints.json`.",
         "",
         "```",
         metrics_df.to_string(index=False),

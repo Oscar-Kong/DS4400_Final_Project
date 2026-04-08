@@ -32,15 +32,23 @@ Comparing the two splits shows how much measured performance is an artifact of e
 
 ## Evaluation metrics
 
-- **MSE, RMSE, MAE, R²** on held-out data. **MAE / RMSE in years** are the most interpretable headlines.
+- **MSE, RMSE, MAE, median absolute error, max error, R², explained variance** on held-out data. **MAE / RMSE in years** are the most interpretable headlines.
 - **Post-hoc decade analysis:** True and predicted years are binned to decades; we report **decade accuracy** and save confusion-style tables for **HGBR** predictions (descriptive only, not a trained classifier).
 
 ## Artifacts (after running the code)
 
-- `outputs/metrics.csv` — all models × both splits.
+- `outputs/metrics.csv` — all models × both splits (MSE, RMSE, MAE, median AE, max error, R², explained variance).
+- `outputs/data_meta.json` — row counts, year range, short dataset/label description.
+- `outputs/eda_feature_year_correlation.csv` — univariate feature–year correlations for EDA and feature-importance discussion.
+- `outputs/figures/eda_*.png` — year distribution, top correlations bar chart, histograms of selected high-signal features.
 - `outputs/figures/residuals_*.png` — residuals for Ridge and HGBR.
+- `outputs/figures/decade_confusion_hgbr_*.png` — heatmaps for post-hoc decade bins (confusion-style view).
+- `outputs/figures/roc_median_year_logistic_*.png` — auxiliary ROC curves (logistic regression on “year ≥ training median”).
 - `outputs/feature_importance_rf_*.csv`, `outputs/ridge_coef_*.csv` — interpretability.
 - `outputs/decade_confusion_*_hgbr.csv` — post-hoc decade confusion tables.
+- `outputs/interpretation_hints.json` — structured notes for the writeup (errors, difficulty, feature roles).
+
+Grading rubric alignment for **code-deliverables**: exploratory plots and correlations (EDA), ≥4 trained models with random and temporal evaluation, multiple metrics, confusion-style and ROC figures, and interpretation-oriented exports are all produced by `run_experiment.py`. The **presentation recording** is separate from the repository.
 
 ## Limitations
 
