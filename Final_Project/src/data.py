@@ -63,13 +63,15 @@ def load_year_prediction_msd(
 
     valid = y.notna() & (y >= YEAR_MIN) & (y <= YEAR_MAX)
     valid &= X.notna().all(axis=1)
-    X = X.loc[valid].reset_index(drop=True)
-    y = y.loc[valid].reset_index(drop=True)
 
-    dup = X.duplicated(keep="first")
-    if dup.any():
-        X = X.loc[~dup].reset_index(drop=True)
-        y = y.loc[~dup].reset_index(drop=True)
+    full = pd.concat(
+        [y.loc[valid].reset_index(drop=True).rename("year"), X.loc[valid].reset_index(drop=True)],
+        axis=1,
+    )
+    full = full.drop_duplicates(keep="first").reset_index(drop=True)
+
+    y = full.pop("year")
+    X = full
 
     feature_names = list(X.columns)
 
