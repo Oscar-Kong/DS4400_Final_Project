@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Run the full YearPredictionMSD experiment suite.
+Main script for my DS 4400 final — trains models on YearPredictionMSD and writes
+tables/plots under `outputs/`.
 
-Usage (from Final_Project/):
-  . .venv/bin/activate
+From `Final_Project/`:
+  python -m venv .venv
+  source .venv/bin/activate          # Windows: .venv\\Scripts\\activate
   pip install -r requirements.txt
   python run_experiment.py
-  python run_experiment.py --sample-fraction 0.05
+  python run_experiment.py --sample-fraction 0.05   # faster while debugging
 """
 
 from __future__ import annotations
@@ -248,18 +250,17 @@ def _run_explicit_validation_split(
     feature_names: list[str],
     include_last_seen_baseline: bool = False,
 ) -> tuple[list[dict], list[dict], dict[str, object]]:
-    if len(X_test) < 100 or len(X_train_ref) < 1_000 or len(X_tune_val) < 100:
+    # Loose floors so `--sample-fraction` smoke runs work; full UCI data is far larger.
+    if len(X_test) < 25 or len(X_train_ref) < 150 or len(X_tune_val) < 15:
         raise RuntimeError(
             f"Split '{split_name}' produced too few samples for a stable run."
         )
 
-    scaler_tune = StandardScaler()
-    X_tune_train_s = scaler_tune.fit_transform(X_tune_train)
-    X_tune_val_s = scaler_tune.transform(X_tune_val)
-
     scaler_final = StandardScaler()
     X_train_ref_s = scaler_final.fit_transform(X_train_ref)
     X_test_s = scaler_final.transform(X_test)
+    X_tune_train_s = scaler_final.transform(X_tune_train)
+    X_tune_val_s = scaler_final.transform(X_tune_val)
 
     rows: list[dict] = []
     baseline_rows = _baseline_rows(
@@ -418,22 +419,24 @@ def _write_summary(
     sample_note = "full dataset" if sample_fraction is None else f"sample_fraction={sample_fraction}"
 
     summary_lines = [
-        "# Auto-generated result summary",
+        "# Results from my last `run_experiment.py` run",
         "",
-        f"Rows used: {meta['n_samples']}",
-        f"Run type: {sample_note}",
+        "Auto-saved so I can paste tables into my report without re-copying numbers.",
         "",
-        "## Regression Results",
+        f"- Rows after loading/cleaning: **{meta['n_samples']}**",
+        f"- Run: **{sample_note}**",
+        "",
+        "## Regression (my four models + splits)",
         "```",
         metrics_df.to_string(index=False),
         "```",
         "",
-        "## Baseline Regression Results",
+        "## Baselines (mean / median predictors — for comparison)",
         "```",
         baseline_df.to_string(index=False),
         "```",
         "",
-        "## Classification Split Support",
+        "## Can I run decade classifiers on this split?",
         "```",
         support_df.to_string(index=False),
         "```",
@@ -443,7 +446,7 @@ def _write_summary(
         summary_lines.extend(
             [
                 "",
-                "## Classification Results (decade labels)",
+                "## Decade classification metrics (when the split allowed it)",
                 "```",
                 classification_df.to_string(index=False),
                 "```",
@@ -612,8 +615,9 @@ def main() -> None:
             )
         else:
             skip_note = (
-                "Skipped decade classification because the test split contains decades "
-                "that never appear in training."
+                "I skipped decade classification for this split because some test "
+                "decades never show up in the training labels, so a classifier would "
+                "have to predict a class it never saw in training.\n"
             )
             (OUT / f"classification_skipped_{split_name}.txt").write_text(skip_note)
 

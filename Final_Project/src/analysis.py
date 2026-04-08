@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge, RidgeCV
@@ -146,9 +149,6 @@ def plot_roc_median_year_split(
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 
 def plot_residuals(
     y_true: np.ndarray,
@@ -190,30 +190,32 @@ def interpretation_summary(
     by_mae = metrics_df.sort_values("mae").head(8)
     return {
         "feature_representation": (
-            "Inputs are 90 numeric timbre summary statistics (f00–f89) from "
-            "YearPredictionMSD; values are standardized with StandardScaler fit "
-            "only on training data for each split regime."
+            "The CSV gives 90 timbre summary columns (I name them f00–f89). For "
+            "linear and ridge I standardize with StandardScaler fitted only on the "
+            "training part of each split so I’m not peeking at test data."
         ),
         "feature_selection": (
-            "All 90 features are used for models. Univariate correlations with year "
-            "and random-forest importances highlight which coordinates carry the "
-            "most signal; highly correlated timbre dimensions motivate ridge and "
-            "tree ensembles."
+            "I use all 90 features — I didn’t drop any for the main runs. To "
+            "talk about importance in my report I look at correlation with year and "
+            "random forest importances; a lot of columns are correlated so ridge "
+            "made sense to me."
         ),
         "most_relevant_features": {
             "by_random_forest_importance_top12": top_imp,
             "by_abs_correlation_with_year_top12": top_corr,
         },
         "why_models_make_errors": (
-            "Release year is not fully determined by coarse timbre summaries; "
-            "adjacent years overlap in feature space. Residual plots show "
-            "heteroscedasticity and systematic bias under temporal shift (time-aware "
-            "split). Large max_error / heavy tails indicate outlier eras or styles."
+            "Year isn’t something you can read perfectly off these coarse summaries — "
+            "neighboring years look similar in the plots. Residuals get worse when "
+            "I use the future split because the sound of ‘newer’ music wasn’t in "
+            "the training distribution. Big max errors are often weird eras or "
+            "outliers."
         ),
         "why_task_is_challenging": (
-            "Label is a continuous year from audio proxies, not causal features; "
-            "distribution shift (random vs time-aware evaluation) reveals spurious "
-            "temporal cues that help under random mixing but hurt on future years."
+            "It’s not like the features ‘cause’ the year; they’re just correlated. "
+            "When I shuffle years randomly the problem looks easier than when I force "
+            "the model to generalize forward in time — that’s the shift my professor "
+            "warned us about."
         ),
         "metrics_table_best_mae": by_mae.to_dict(orient="records"),
     }

@@ -1,72 +1,77 @@
-# Decoding Musical Time: Methods, Evaluation, and Reporting Notes
+# DS 4400 final project — what I ran and how I’m using the numbers
 
-This document explains the final experiment design used by `run_experiment.py`. Report-ready numbers are written to `outputs/metrics.csv`, `outputs/baseline_metrics.csv`, and `outputs/RESULTS_SUMMARY.md`.
+Hey — this is my notes file for the final so I don’t forget what the code is doing. All the actual tables get dumped when I run `run_experiment.py` into `outputs/metrics.csv`, `outputs/baseline_metrics.csv`, and `outputs/RESULTS_SUMMARY.md`.
 
-## Main story
+## What I’m trying to predict
 
-- Primary task: regression on release year.
-- Secondary task: decade classification for interpretation and rubric support.
-- Primary benchmark to report: random split results.
-- Stronger leakage check to report: blocked holdout results.
-- Stress test to report carefully: future extrapolation results. Treat this as a hard generalization check, not the main headline table.
+I’m mostly doing **regression**: predict **release year** from the 90 timbre-style features in YearPredictionMSD.
 
-## Regression models
+I also trained some **decade classifiers** (same data, but labels binned by decade) because it helped me talk about confusion matrices and ROC in the report, and it made the patterns easier to explain in words.
 
-The project compares four regression models:
+**How I’m planning to present it in the video/writeup**
 
-| Model | Purpose |
+- I’ll lead with the **random split** — it’s the cleanest “normal ML” story.
+- Then I’ll show the **blocked holdout** split as a stricter check (test years aren’t in training).
+- I’ll show the **future extrapolation** split last and be honest that it’s brutal — it’s mostly there to show the model can look good when years are mixed randomly but struggle when the task is “old music → predict newer music.”
+
+## Models I used (regression)
+
+I picked four regressors — enough to compare linear vs regularized linear vs trees, without adding a fifth model that was slow and didn’t change my conclusions:
+
+| What I called it in the CSV | Why I included it |
 | --- | --- |
-| `linear_regression` | Simple baseline on scaled features |
-| `ridge_regression` | Regularized linear model with alpha selected on validation data |
-| `random_forest` | Nonlinear ensemble with feature importance estimates |
-| `hist_gradient_boosting` | Strong tree boosting baseline for tabular data |
+| `linear_regression` | Simple baseline. If I can’t beat this, something’s wrong. |
+| `ridge_regression` | Same idea as linear but with L2; features are correlated so this usually helps. I picked the strength of regularization on the validation slice. |
+| `random_forest` | Nonlinear + I can read off feature importances for the writeup. |
+| `hist_gradient_boosting` | Strong default for tabular data; this was usually my best or close to it. |
 
-The old sklearn `GradientBoostingRegressor` path has been removed because it did not materially improve the story or the runtime.
+I dropped the older sklearn `GradientBoostingRegressor` from my pipeline because it was slower and didn’t really change what I wanted to say for the project.
 
-## Evaluation design
+## How I split the data
 
 ### Random split
 
-- About 70% train, 15% validation, 15% test.
-- Hyperparameters are selected using the explicit validation split.
-- Final models are fit on train plus validation and scored on the held-out test set.
+Roughly **70% train / 15% validation / 15% test**, fixed seed (`42`) so my results are reproducible.
+
+I tune hyperparameters on **train vs validation**, then I **refit on train+validation** and only then score **test** (so the test set stays honest).
 
 ### Blocked holdout
 
-- Validation window: 1971-1980
-- Test window: 1981-1995
-- Final training pool: all years except the test window
+- Validation years: **1971–1980**
+- Test years: **1981–1995**
+- Training pool: everything **except** the test window
 
-This split is useful because it removes the exact test years from training without forcing the model to extrapolate only beyond the maximum observed train year.
+I liked this split because the model never sees the exact test years during training, but I’m not yet forcing it to extrapolate past the newest year in the dataset like the “future” split does.
 
-### Future extrapolation stress test
+### Future extrapolation (stress test)
 
-- Training pool: years up to 2000
-- Tuning split: years up to 1995 versus 1996-2000
-- Test pool: years after 2000
+- Train: **year ≤ 2000**
+- For tuning: **≤ 1995** vs **1996–2000**
+- Test: **year > 2000**
 
-This is intentionally difficult. It should be discussed as a stress test because it asks the model to predict later music from earlier music only.
+This one is supposed to look bad (or at least worse). I’m using it in the “limitations / why is this hard” part of the report, not as my main accuracy brag.
 
 ## Baselines
 
-Every regression split is compared against naive baselines:
+I compare against dumb predictors so I’m not impressed by numbers that are barely better than guessing the average year:
 
-- training-mean predictor
-- training-median predictor
-- last-seen-year predictor for the future extrapolation split
+- always predict the **mean** year from training  
+- always predict the **median** year from training  
+- for the future split only, also **“last year seen in training”** as another sanity check  
 
-A learned model should beat these baselines before the result is presented as meaningful.
+If my real models don’t beat these, I shouldn’t oversell them.
 
-## Classification notes
+## Decade classification (extra)
 
-- Decade classification is run only on splits where every test decade label appears in training.
-- Use confusion matrices and ROC curves from those supported splits in the final report.
-- Do not use the future extrapolation classification result as a headline comparison if the test set contains unseen decade labels.
+The script only runs full decade classification when **every decade label in the test set also shows up in training** — otherwise sklearn would be trying to predict classes it never saw, which isn’t the point of what I’m doing here.
 
-## Recommended reporting
+- I’m using the **confusion matrices** and **ROC (one-vs-rest)** plots from the splits where that check passes.
+- If the **future extrapolation** split skips classification, that’s expected; I’ll explain in the video that newer decades weren’t in the training labels.
 
-- Put the random split regression table first.
-- Put the blocked holdout regression table second.
-- Use the future extrapolation table as a limitations or robustness subsection.
-- Include baseline metrics alongside the learned models.
-- Use feature importance, ridge coefficients, residual plots, and decade confusion patterns to interpret what the models are learning.
+## What I’d put in the final writeup / slides
+
+- Random split table first, then blocked holdout, then future split as a “hard mode” discussion.  
+- Show **baselines** next to real models.  
+- Use **feature importances**, **ridge coefficients**, **residual plots**, and **decade confusion** screenshots to explain what the model is actually learning and where it messes up.
+
+That’s it — the code is the source of truth; this file is just how I’m framing it for class.

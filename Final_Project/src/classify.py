@@ -59,7 +59,7 @@ def run_decade_classification(
     }
 
     rows: list[dict] = []
-    best_model = None
+    best_model: tuple[str, object] | None = None
     best_acc = -1.0
 
     for name, clf in classifiers.items():
@@ -73,9 +73,12 @@ def run_decade_classification(
             "accuracy": float(acc),
             "weighted_f1": float(f1),
         })
-        if acc > best_acc:
-            best_acc = acc
+        if acc >= best_acc:
+            best_acc = float(acc)
             best_model = (name, clf)
+
+    if best_model is None:
+        return rows
 
     # Confusion matrix for the best classifier
     best_name, best_clf = best_model
