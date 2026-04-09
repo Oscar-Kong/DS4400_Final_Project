@@ -1,0 +1,80 @@
+{
+  "data": {
+    "n_samples": 515131,
+    "n_features": 90,
+    "year_min": 1922.0,
+    "year_max": 2011.0,
+    "sample_fraction": null
+  },
+  "splits": {
+    "random": {
+      "split": "random",
+      "tune_train_rows": 360591,
+      "tune_val_rows": 77270,
+      "train_rows": 437861,
+      "test_rows": 77270,
+      "tune_train_years": {
+        "min": 1922,
+        "max": 2011
+      },
+      "tune_val_years": {
+        "min": 1922,
+        "max": 2010
+      },
+      "train_years": {
+        "min": 1922,
+        "max": 2011
+      },
+      "test_years": {
+        "min": 1924,
+        "max": 2010
+      }
+    },
+    "blocked_holdout": {
+      "split": "blocked_holdout",
+      "tune_train_rows": 389618,
+      "tune_val_rows": 25489,
+      "train_rows": 415107,
+      "test_rows": 100024,
+      "tune_train_years": {
+        "min": 1922,
+        "max": 2011
+      },
+      "tune_val_years": {
+        "min": 1971,
+        "max": 1980
+      },
+      "train_years": {
+        "min": 1922,
+        "max": 2011
+      },
+      "test_years": {
+        "min": 1981,
+        "max": 1995
+      }
+    },
+    "future_extrapolation": {
+      "split": "future_extrapolation",
+      "tune_train_rows": 143532,
+      "tune_val_rows": 82614,
+      "train_rows": 226146,
+      "test_rows": 288985,
+      "tune_train_years": {
+        "min": 1922,
+        "max": 1995
+      },
+      "tune_val_years": {
+        "min": 1996,
+        "max": 2000
+      },
+      "train_years": {
+        "min": 1922,
+        "max": 2000
+      },
+      "test_years": {
+        "min": 2001,
+        "max": 2011
+      }
+    }
+  }
+}

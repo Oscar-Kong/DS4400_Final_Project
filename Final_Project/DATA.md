@@ -1,38 +1,70 @@
-# Data writeup — YearPredictionMSD
+# Data notes - YearPredictionMSD
 
-## Where I got it
+## Source
 
-I’m using the **Year Prediction Million Song Dataset** version that UCI hosts — it’s basically tabular features derived from the Million Song Dataset, not raw audio files. Link: [YearPredictionMSD on UCI](https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD).
+We are using the UCI **YearPredictionMSD** benchmark:
 
-When I run the project, `src/data.py` downloads the zip once (if I don’t already have it) and unpacks `YearPredictionMSD.txt` into `data_cache/` next to the project.
+[https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD](https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD)
 
-## Why I didn’t use Spotify as my main dataset
+It is a tabular dataset built from the Million Song Dataset. We are not working with raw audio files here.
 
-I didn’t want to risk terms-of-use / redistribution issues with API data for a class project. This UCI bundle is public and already packaged for ML homework, so it was an easier fit.
+When `run_experiment.py` runs, `src/data.py` downloads the archive if needed and stores it under `data_cache/`.
 
-## What’s in each row
+## Why we used this dataset
 
-- There are on the order of **~515k** tracks in the official file before I clean it (exact count lands in `outputs/data_meta.json` after a run).
-- **Label:** release year (the homework problem is to predict this). Years are mostly in the **1922–2011** range for this benchmark.
-- **Features:** **90** numeric columns. In my code they’re named `f00` … `f89`. They’re timbre-related summaries that came with the dataset — I’m not engineering new audio features from scratch.
+This was the safest choice for the class project.
 
-## What I do to clean it
+- it is public
+- it is stable
+- it is already set up for supervised learning
+- it avoids the mess of API limits or data-use questions that would come with pulling a custom Spotify dataset
 
-- Drop rows if the year or any feature is missing.  
-- Drop **exact duplicate** feature rows (same 90 numbers). I’m **not** dropping rows just because two different years share similar feature values — that would be sketchy.  
-- If I’m debugging or my laptop is struggling, I sometimes run with `--sample-fraction` in `run_experiment.py` (e.g. 0.05) just to get faster feedback; the writeup for the final should use the full data unless the professor says otherwise.  
-- `StandardScaler` (z-scores) is only for the **linear / ridge** models, and I always fit the scaler on **training data for that split** — I never fit it on the test set.
+## What each row looks like
 
-## Splits my code actually uses
+Each row is one song with:
 
-1. **Random:** ~70 / 15 / 15 train / val / test, `random_state=42`.  
-2. **Blocked holdout:** val = **1971–1980**, test = **1981–1995**, train = everything else except the test window.  
-3. **Future stress test:** train **≤ 2000**, tune inner slice **≤ 1995** vs **1996–2000**, test **> 2000**.
+- one target: release year
+- 90 numeric features named `f00` through `f89`
 
-## Files the pipeline writes (so I can find them later)
+After cleaning, the dataset we used has **515,131 rows**. The year range is **1922 to 2011**.
 
-- `outputs/data_meta.json` — how many rows I used, year min/max, etc.  
-- `outputs/split_metadata.json` — sizes and year ranges per split. Baseline scores live in `outputs/baseline_metrics.csv`.
-- `outputs/classification_support.csv` — whether decade classification was allowed for each split.
+## Cleaning
 
-If something looks weird, I re-run `python run_experiment.py` from the `Final_Project` folder and trust the newer outputs.
+The cleaning steps are simple:
+
+- drop rows with missing year values
+- drop rows with missing feature values
+- drop only exact duplicate rows
+
+We did **not** remove rows just because two songs had similar features. If two songs look similar in the feature space but came out in different years, that is part of the actual problem.
+
+## Preprocessing
+
+We only scale features where it makes sense:
+
+- linear regression and ridge use `StandardScaler`
+- tree-based models use the raw numeric features
+
+The scaler is always fit on the training side of a split, never on the test side.
+
+## Splits used in the code
+
+1. **Random split**
+   About 70 / 15 / 15 train, validation, and test.
+
+2. **Blocked holdout**
+   Validation years are 1971-1980, test years are 1981-1995, and the training pool is everything outside the test block.
+
+3. **Future extrapolation**
+   Train on years up to 2000, tune on up to 1995 versus 1996-2000, and test on years after 2000.
+
+## Files worth checking after a run
+
+- `outputs/data_meta.json`
+- `outputs/split_metadata.json`
+- `outputs/metrics.csv`
+- `outputs/baseline_metrics.csv`
+- `outputs/RESULTS_SUMMARY.md`
+- `outputs/figures/`
+
+If something looks off, rerun `python run_experiment.py` from `Final_Project/` and use the newly generated outputs.

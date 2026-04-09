@@ -1,0 +1,1 @@
+decade_bin_accuracy	0.5575

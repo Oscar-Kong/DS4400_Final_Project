@@ -26,7 +26,6 @@ from sklearn.model_selection import ParameterSampler
 from sklearn.preprocessing import StandardScaler
 
 from src.analysis import decade_posthoc, plot_residuals, ridge_coef_table
-from src.classify import run_decade_classification
 from src.data import load_year_prediction_msd
 from src.eda import run_eda
 from src.eval import regression_metrics
@@ -220,23 +219,6 @@ def _split_metadata(
     }
 
 
-def _decade_support(
-    split_name: str,
-    y_train: np.ndarray,
-    y_test: np.ndarray,
-) -> dict[str, object]:
-    train_labels = sorted({int(v) for v in (np.floor(y_train / 10) * 10).astype(int)})
-    test_labels = sorted({int(v) for v in (np.floor(y_test / 10) * 10).astype(int)})
-    unseen = [label for label in test_labels if label not in train_labels]
-    return {
-        "split": split_name,
-        "train_decades": ",".join(str(v) for v in train_labels),
-        "test_decades": ",".join(str(v) for v in test_labels),
-        "unseen_test_decades": ",".join(str(v) for v in unseen),
-        "all_test_labels_seen": not unseen,
-    }
-
-
 def _run_explicit_validation_split(
     split_name: str,
     X_tune_train: np.ndarray,
@@ -412,8 +394,6 @@ def _write_summary(
     meta: dict[str, object],
     metrics_df: pd.DataFrame,
     baseline_df: pd.DataFrame,
-    support_df: pd.DataFrame,
-    classification_df: pd.DataFrame,
 ) -> None:
     sample_fraction = meta["sample_fraction"]
     sample_note = "full dataset" if sample_fraction is None else f"sample_fraction={sample_fraction}"
@@ -435,25 +415,47 @@ def _write_summary(
         "```",
         baseline_df.to_string(index=False),
         "```",
-        "",
-        "## Can I run decade classifiers on this split?",
-        "```",
-        support_df.to_string(index=False),
-        "```",
     ]
 
-    if not classification_df.empty:
-        summary_lines.extend(
-            [
-                "",
-                "## Decade classification metrics (when the split allowed it)",
-                "```",
-                classification_df.to_string(index=False),
-                "```",
-            ]
-        )
-
     (OUT / "RESULTS_SUMMARY.md").write_text("\n".join(summary_lines))
+
+
+def _cleanup_previous_outputs(out_dir: Path) -> None:
+    managed_patterns = [
+        "baseline_metrics.csv",
+        "classification_metrics.csv",
+        "classification_report_*.txt",
+        "classification_skipped_*.txt",
+        "classification_support.csv",
+        "data_meta.json",
+        "decade_accuracy_hgbr_*.txt",
+        "decade_confusion_*.csv",
+        "feature_importance_rf_*.csv",
+        "metrics.csv",
+        "RESULTS_SUMMARY.md",
+        "ridge_coef_*.csv",
+        "split_metadata.json",
+    ]
+    figure_patterns = [
+        "confusion_matrix_*.png",
+        "decade_confusion_heatmap_*.png",
+        "eda_*.png",
+        "feature_importance_bar_*.png",
+        "model_comparison_*.png",
+        "predicted_vs_actual_*.png",
+        "residuals_*.png",
+        "roc_curves_*.png",
+    ]
+
+    for pattern in managed_patterns:
+        for path in out_dir.glob(pattern):
+            path.unlink(missing_ok=True)
+
+    fig_dir = out_dir / "figures"
+    if fig_dir.exists():
+        for pattern in figure_patterns:
+            for path in fig_dir.glob(pattern):
+                path.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -475,6 +477,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     fig_dir = OUT / "figures"
     fig_dir.mkdir(exist_ok=True)
+    _cleanup_previous_outputs(OUT)
 
     X_df, y_series, feature_names = load_year_prediction_msd(
         data_home=args.data_home,
@@ -593,56 +596,17 @@ def main() -> None:
     print("Generating regression comparison plots ...")
     plot_model_comparison(metrics_df, OUT)
 
-    classification_support_rows: list[dict] = []
-    classification_rows: list[dict] = []
-
-    for split_name in ("random", "blocked_holdout", "future_extrapolation"):
-        artifacts = artifacts_by_split[split_name]
-        support = _decade_support(split_name, artifacts["y_train"], artifacts["y_test"])
-        classification_support_rows.append(support)
-
-        if support["all_test_labels_seen"]:
-            print(f"Running decade classification: {split_name} ...")
-            classification_rows.extend(
-                run_decade_classification(
-                    X_train=artifacts["X_train_raw"],
-                    y_train=artifacts["y_train"],
-                    X_test=artifacts["X_test_raw"],
-                    y_test=artifacts["y_test"],
-                    split_name=split_name,
-                    out_dir=OUT,
-                )
-            )
-        else:
-            skip_note = (
-                "I skipped decade classification for this split because some test "
-                "decades never show up in the training labels, so a classifier would "
-                "have to predict a class it never saw in training.\n"
-            )
-            (OUT / f"classification_skipped_{split_name}.txt").write_text(skip_note)
-
-    support_df = pd.DataFrame(classification_support_rows)
-    support_df.to_csv(OUT / "classification_support.csv", index=False)
-
-    classification_df = pd.DataFrame(classification_rows)
-    if not classification_df.empty:
-        classification_df.to_csv(OUT / "classification_metrics.csv", index=False)
-
     combined_metadata = {
         "data": meta,
         "splits": split_metadata,
-        "classification_support": classification_support_rows,
     }
     (OUT / "split_metadata.json").write_text(json.dumps(combined_metadata, indent=2))
 
-    _write_summary(meta, metrics_df, baseline_df, support_df, classification_df)
+    _write_summary(meta, metrics_df, baseline_df)
 
     print(metrics_df.to_string(index=False))
     print("\nBaseline metrics")
     print(baseline_df.to_string(index=False))
-    if not classification_df.empty:
-        print("\nClassification metrics")
-        print(classification_df.to_string(index=False))
     print("\nWrote outputs to", OUT)
 
 

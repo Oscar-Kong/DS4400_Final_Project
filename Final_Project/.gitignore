@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-outputs/
 .scikit_learn_data/
 data_cache/
+REPORT.md
