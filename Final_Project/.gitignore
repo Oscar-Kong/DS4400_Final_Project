@@ -3,4 +3,3 @@ __pycache__/
 *.pyc
 .scikit_learn_data/
 data_cache/
-REPORT.md
